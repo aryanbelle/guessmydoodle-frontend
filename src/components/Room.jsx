@@ -15,6 +15,8 @@ function Room() {
   const [brushSize, setBrushSize] = useState(5);
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
   const isDrawing = useRef(false);
 
   useEffect(() => {
@@ -25,16 +27,34 @@ function Room() {
         alert(data.message);
       });
 
-      socket.on('draw', ({ roomId, line }) => {
-        console.log('Received line:', line);
-        if (roomId === roomId) {
+      socket.on('draw', ({ roomId: rId, line }) => {
+        if (rId === roomId) {
           setLines((prevLines) => [...prevLines, line]);
         }
       });
 
+      socket.on('undo', ({ roomId: rId, updatedLines }) => {
+        if (rId === roomId) {
+          setLines(updatedLines);
+        }
+      });
+
+      socket.on('redo', ({ roomId: rId, updatedLines }) => {
+        if (rId === roomId) {
+          setLines(updatedLines);
+        }
+      });
+
+      socket.on('message', (message) => {
+        setMessages((prevMessages) => [...prevMessages, message]);
+      });
+
       return () => {
         socket.off('draw');
+        socket.off('undo');
+        socket.off('redo');
         socket.off('userJoined');
+        socket.off('message');
       };
     }
   }, [roomId]);
@@ -43,48 +63,38 @@ function Room() {
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
     if (pos) {
-      const newLine = { tool, points: [pos.x, pos.y], color: brushColor, size: brushSize };
+      const newLine = {
+        tool,
+        points: [pos.x, pos.y],
+        color: tool === 'eraser' ? '#0a0a0a' : brushColor,
+        size: brushSize,
+      };
       setLines([...lines, newLine]);
+      setUndoStack([...undoStack, lines]);
+      setRedoStack([]);
       socket.emit('draw', { roomId, line: newLine });
     }
   };
 
   const handleMouseMove = (e) => {
-    if (!isDrawing.current) return;
+    if (!isDrawing.current || lines.length === 0) return;
+
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
-
     if (!point) return;
 
     setLines((prevLines) => {
-      const newLines = [...prevLines];
-      const lastLine = newLines[newLines.length - 1];
+      const lastLine = { ...prevLines[prevLines.length - 1] };
+      lastLine.points = lastLine.points.concat([point.x, point.y]);
 
-      if (lastLine && lastLine.tool === 'pen') {
-        lastLine.points = lastLine.points.concat([point.x, point.y]);
-        socket.emit('draw', { roomId, line: lastLine });
-      } else if (lastLine && lastLine.tool === 'eraser') {
-        const updatedPoints = [];
-        for (let i = 0; i < lastLine.points.length; i += 2) {
-          const x = lastLine.points[i];
-          const y = lastLine.points[i + 1];
-          if (Math.hypot(x - point.x, y - point.y) > brushSize) {
-            updatedPoints.push(x, y);
-          }
-        }
-        lastLine.points = updatedPoints;
-        socket.emit('draw', { roomId, line: lastLine });
-      }
-
+      const newLines = prevLines.slice(0, prevLines.length - 1).concat(lastLine);
+      socket.emit('draw', { roomId, line: lastLine });
       return newLines;
     });
   };
 
   const handleMouseUp = () => {
-    if (isDrawing.current) {
-      setUndoStack([...undoStack, [...lines]]);
-      isDrawing.current = false;
-    }
+    isDrawing.current = false;
   };
 
   const undo = () => {
@@ -92,6 +102,7 @@ function Room() {
     const previousState = undoStack.pop();
     setRedoStack([lines, ...redoStack]);
     setLines(previousState);
+    socket.emit('undo', { roomId, updatedLines: previousState });
   };
 
   const redo = () => {
@@ -99,12 +110,21 @@ function Room() {
     const nextState = redoStack.shift();
     setUndoStack([...undoStack, lines]);
     setLines(nextState);
+    socket.emit('redo', { roomId, updatedLines: nextState });
+  };
+
+  const sendMessage = () => {
+    if (newMessage.trim()) {
+      socket.emit('message', { roomId, message: newMessage });
+      setNewMessage('');
+    }
   };
 
   return (
     <div className='bg-[#0a0a0a] h-screen flex'>
-      <div className='flex flex-col h-[25vh] flex-grow p-4'>
-        <div className='bg-[#1e1e1e] p-4 rounded-lg shadow-lg mb-4 flex justify-between items-center'>
+      {/* Drawing Area */}
+      <div className='flex-grow w-[70%] flex flex-col'>
+        <div className='bg-[#1e1e1e] p-4 shadow-lg flex justify-between items-center'>
           <div className='flex space-x-2'>
             <button
               onClick={() => setTool('pen')}
@@ -159,8 +179,8 @@ function Room() {
           </div>
         </div>
         <Stage
-          width={window.innerWidth}
-          height={window.innerHeight}
+          width={window.innerWidth - 300} // Adjust width based on the chat panel width
+          height={window.innerHeight - 120} // Adjust height based on the tools panel height
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
@@ -179,6 +199,37 @@ function Room() {
             ))}
           </Layer>
         </Stage>
+      </div>
+
+      {/* Chat Panel */}
+      <div className='w-[30%] bg-[#1e1e1e] p-6 flex flex-col'>
+        <h2 className='text-xl font-bold mb-4 text-gray-300'>Chat</h2>
+        <hr />
+        <div className='flex-1 overflow-y-auto mb-4'>
+          {/* Display messages */}
+          <div className='space-y-2'>
+            {messages.map((msg, index) => (
+              <div key={index} className='bg-[#2b2b2b] p-2 rounded-md'>
+                <p className='text-gray-300'>{msg}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div className='flex'>
+          <input
+            type="text"
+            value={newMessage}
+            onChange={(e) => setNewMessage(e.target.value)}
+            placeholder="Type a message"
+            className='bg-[#3a3a3a] text-white flex-grow p-2 rounded-l-md border-none outline-none'
+          />
+          <button
+            onClick={sendMessage}
+            className='bg-[#2b2b2b] p-2 rounded-r-md text-white hover:bg-[#1b1b1b] transition duration-200'
+          >
+            Send
+          </button>
+        </div>
       </div>
     </div>
   );

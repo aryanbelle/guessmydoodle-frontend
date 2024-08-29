@@ -36,6 +36,7 @@ function SignIn() {
     const handleGuestSignIn = async () => {
         try {
             const result = await signInAnonymously(auth);
+            console.log(result);
             const idToken = await result.user.getIdToken();
             console.log("Anonymous User ID Token:", idToken);
 
@@ -44,16 +45,7 @@ function SignIn() {
                     Authorization: `Bearer ${idToken}`
                 }
             });
-            console.log(response.data + " THISISISISISR EPSONSE")
-            if (response.data.success) {
-                console.log('ky vishy nyi ghe')
-                navigate("/main");
-            }
-            else {
-                console.log("Fail vhyaily")
-                alert("Login failed");
-            }
-
+            navigate("/main")
         } catch (error) {
             console.error("Anonymous Sign-In Error:", error);
         }
