@@ -1,62 +1,109 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
+import { useParams } from 'react-router-dom';
 import { Stage, Layer, Line } from 'react-konva';
 import { ReactComponent as PencilIcon } from '../assets/icons/pencil.svg';
-import {ReactComponent as EraserIcon} from "../assets/icons/eraser.svg";
+import { ReactComponent as EraserIcon } from '../assets/icons/eraser.svg';
+import io from 'socket.io-client';
+
+const socket = io('http://localhost:5000');
+
 function Room() {
+  const { roomId } = useParams();
   const [tool, setTool] = useState('pen');
   const [lines, setLines] = useState([]);
-  const [brushColor, setBrushColor] = useState('#ffffff'); // Default brush color to white
+  const [brushColor, setBrushColor] = useState('#ffffff');
   const [brushSize, setBrushSize] = useState(5);
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const isDrawing = useRef(false);
 
+  useEffect(() => {
+    if (roomId) {
+      socket.emit('joinRoom', { roomId });
+
+      socket.on('userJoined', (data) => {
+        alert(data.message);
+      });
+
+      socket.on('draw', ({ roomId, line }) => {
+        console.log('Received line:', line);
+        if (roomId === roomId) {
+          setLines((prevLines) => [...prevLines, line]);
+        }
+      });
+
+      return () => {
+        socket.off('draw');
+        socket.off('userJoined');
+      };
+    }
+  }, [roomId]);
+
   const handleMouseDown = (e) => {
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
-    setUndoStack([...undoStack, lines]); // Save current state to undo stack
-    setRedoStack([]); // Clear redo stack on new drawing
-    setLines([...lines, { tool, points: [pos.x, pos.y], color: brushColor, size: brushSize }]);
+    if (pos) {
+      const newLine = { tool, points: [pos.x, pos.y], color: brushColor, size: brushSize };
+      setLines([...lines, newLine]);
+      socket.emit('draw', { roomId, line: newLine });
+    }
   };
 
   const handleMouseMove = (e) => {
-    if (!isDrawing.current) {
-      return;
-    }
+    if (!isDrawing.current) return;
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
-    let lastLine = lines[lines.length - 1];
-    lastLine.points = lastLine.points.concat([point.x, point.y]);
 
-    lines.splice(lines.length - 1, 1, lastLine);
-    setLines(lines.concat());
+    if (!point) return;
+
+    setLines((prevLines) => {
+      const newLines = [...prevLines];
+      const lastLine = newLines[newLines.length - 1];
+
+      if (lastLine && lastLine.tool === 'pen') {
+        lastLine.points = lastLine.points.concat([point.x, point.y]);
+        socket.emit('draw', { roomId, line: lastLine });
+      } else if (lastLine && lastLine.tool === 'eraser') {
+        const updatedPoints = [];
+        for (let i = 0; i < lastLine.points.length; i += 2) {
+          const x = lastLine.points[i];
+          const y = lastLine.points[i + 1];
+          if (Math.hypot(x - point.x, y - point.y) > brushSize) {
+            updatedPoints.push(x, y);
+          }
+        }
+        lastLine.points = updatedPoints;
+        socket.emit('draw', { roomId, line: lastLine });
+      }
+
+      return newLines;
+    });
   };
 
   const handleMouseUp = () => {
-    isDrawing.current = false;
+    if (isDrawing.current) {
+      setUndoStack([...undoStack, [...lines]]);
+      isDrawing.current = false;
+    }
   };
 
   const undo = () => {
     if (undoStack.length === 0) return;
-    const previousState = undoStack[undoStack.length - 1];
-    setRedoStack([lines, ...redoStack]); // Save current state to redo stack
+    const previousState = undoStack.pop();
+    setRedoStack([lines, ...redoStack]);
     setLines(previousState);
-    setUndoStack(undoStack.slice(0, -1)); // Remove last state from undo stack
   };
 
   const redo = () => {
     if (redoStack.length === 0) return;
-    const nextState = redoStack[0];
-    setUndoStack([...undoStack, lines]); // Save current state to undo stack
+    const nextState = redoStack.shift();
+    setUndoStack([...undoStack, lines]);
     setLines(nextState);
-    setRedoStack(redoStack.slice(1)); // Remove first state from redo stack
   };
 
   return (
     <div className='bg-[#0a0a0a] h-screen flex'>
-      {/* Drawing Area */}
       <div className='flex flex-col h-[25vh] flex-grow p-4'>
-        {/* Drawing Tools */}
         <div className='bg-[#1e1e1e] p-4 rounded-lg shadow-lg mb-4 flex justify-between items-center'>
           <div className='flex space-x-2'>
             <button
@@ -111,41 +158,27 @@ function Room() {
             </button>
           </div>
         </div>
-
-        {/* Canvas */}
-        <div className='flex-grow h-[60vh]'>
-          <Stage
-            width={window.innerWidth * 2 / 3} // Adjust width based on window size
-            height={window.innerHeight - 145} // Adjust height based on window size and control area height
-            onMouseDown={handleMouseDown}
-            onMousemove={handleMouseMove}
-            onMouseup={handleMouseUp}
-            style={{ border: '2px solid #333', backgroundColor: '#1e1e1e', boxShadow: '0 4px 8px rgba(0, 0, 0, 0.5)' }}
-          >
-            <Layer>
-              {lines.map((line, i) => (
-                <Line
-                  key={i}
-                  points={line.points}
-                  stroke={line.tool === 'eraser' ? '#1e1e1e' : line.color}
-                  strokeWidth={line.size}
-                  tension={0.5}
-                  lineCap="round"
-                  globalCompositeOperation={line.tool === 'eraser' ? 'destination-out' : 'source-over'}
-                />
-              ))}
-            </Layer>
-          </Stage>
-        </div>
-      </div>
-
-      {/* Chat Area */}
-      <div className='w-full md:w-1/3 h-full bg-[#1e1e1e] p-6 text-gray-300'>
-        <h2 className='text-xl font-bold mb-4'>Chat</h2>
-        {/* Placeholder for chat functionality */}
-        <div className='border-t border-gray-600 pt-4'>
-          <p>No chat functionality implemented yet.</p>
-        </div>
+        <Stage
+          width={window.innerWidth}
+          height={window.innerHeight}
+          onMouseDown={handleMouseDown}
+          onMouseMove={handleMouseMove}
+          onMouseUp={handleMouseUp}
+        >
+          <Layer>
+            {lines.map((line, index) => (
+              <Line
+                key={index}
+                points={line.points}
+                stroke={line.color}
+                strokeWidth={line.size}
+                tension={0.5}
+                lineCap="round"
+                lineJoin="round"
+              />
+            ))}
+          </Layer>
+        </Stage>
       </div>
     </div>
   );

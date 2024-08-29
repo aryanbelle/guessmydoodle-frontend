@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import io from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
 
@@ -15,6 +15,30 @@ function Main() {
   const [joinRoomId, setJoinRoomId] = useState('');
   const [joinPassword, setJoinPassword] = useState('');
 
+  useEffect(() => {
+    // Setup event listeners
+    socket.on('connect', () => {
+      console.log('Socket connected:', socket.id);
+    });
+
+    socket.on('roomCreated', (room) => {
+      console.log('Room created:', room);
+      navigate(`/room/${room.id}`);
+    });
+
+    socket.on('roomJoined', (room) => {
+      console.log('Joined room:', room);
+      navigate(`/room/${room.id}`);
+    });
+
+    // Cleanup event listeners on component unmount
+    return () => {
+      socket.off('userJoined');
+      socket.off('roomCreated');
+      socket.off('roomJoined');
+    };
+  }, [navigate]);
+
   const handleCreateRoom = () => {
     const roomData = {
       roomName,
@@ -23,17 +47,7 @@ function Main() {
     };
 
     socket.emit('createRoom', roomData);
-
-    socket.on('roomCreated', (room) => {
-      console.log('Room created:', room);
-      navigate(`/room/${room.id}`);
-    });
-
     setIsModalOpen(false);
-
-    return () => {
-      socket.off('roomCreated');
-    };
   };
 
   const handleJoinRoom = () => {
@@ -43,22 +57,7 @@ function Main() {
     };
 
     socket.emit('joinRoom', joinData);
-
-    socket.on('roomJoined', (room) => {
-      console.log('Joined room:', room);
-      navigate(`/room/${room.id}`);
-    });
-    socket.on('userJoined', (data) => {
-      alert(data.message); // Alerts "User with ID [socket.id] has joined the room."
-      // Alternatively, you can update the UI to reflect the new user joining
-    });
-    
-
     setIsJoinModalOpen(false);
-
-    return () => {
-      socket.off('roomJoined');
-    };
   };
 
   return (
@@ -165,7 +164,7 @@ function Main() {
             transform: 'scale(0.95)',
             transition: 'transform 0.3s ease-in-out'
           }}>
-            <h2 className="text-2xl font-semibold mb-4">Join a Room</h2>
+            <h2 className="text-2xl font-semibold mb-4">Join an Existing Room</h2>
             <input
               type="text"
               placeholder="Room ID"
@@ -175,7 +174,7 @@ function Main() {
             />
             <input
               type="password"
-              placeholder="Room Password (if required)"
+              placeholder="Room Password"
               value={joinPassword}
               onChange={(e) => setJoinPassword(e.target.value)}
               className="w-full p-2 mb-4 bg-[#2b2b2b] border border-gray-600 rounded-md"
