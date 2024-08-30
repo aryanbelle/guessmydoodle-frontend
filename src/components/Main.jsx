@@ -1,72 +1,87 @@
-import React, { useState, useEffect } from 'react';
-import io from 'socket.io-client';
-import { useNavigate } from 'react-router-dom';
+import React, { useState, useEffect } from "react";
+import io from "socket.io-client";
+import { useNavigate } from "react-router-dom";
+import { auth } from "../lib/firebaseConfig";
 
-const socket = io('http://localhost:5000');
+const socket = io("http://localhost:5000");
 
 function Main() {
   const navigate = useNavigate();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isJoinModalOpen, setIsJoinModalOpen] = useState(false);
-  const [roomName, setRoomName] = useState('');
+  const [roomName, setRoomName] = useState("");
   const [isPrivate, setIsPrivate] = useState(false);
-  const [password, setPassword] = useState('');
-  const [joinRoomId, setJoinRoomId] = useState('');
-  const [joinPassword, setJoinPassword] = useState('');
+  const [password, setPassword] = useState("");
+  const [joinRoomId, setJoinRoomId] = useState("");
+  const [joinPassword, setJoinPassword] = useState("");
 
   useEffect(() => {
-    // Setup event listeners
-    socket.on('connect', () => {
-      console.log('Socket connected:', socket.id);
+    socket.on("connect", () => {
+      console.log("Socket connected:", socket.id);
     });
 
-    socket.on('roomCreated', (room) => {
-      console.log('Room created:', room);
+    socket.on("roomCreated", (room) => {
+      console.log("Room created:", room);
       navigate(`/room/${room.id}`);
     });
 
-    socket.on('roomJoined', (room) => {
-      console.log('Joined room:', room);
+    socket.on("roomJoined", (room) => {
+      console.log("Joined room:", room);
       navigate(`/room/${room.id}`);
+    });
+
+    socket.on("roomJoinError", (data) => {
+      alert(data.message);
     });
 
     // Cleanup event listeners on component unmount
     return () => {
-      socket.off('userJoined');
-      socket.off('roomCreated');
-      socket.off('roomJoined');
+      socket.off("userJoined");
+      socket.off("roomCreated");
+      socket.off("roomJoined");
     };
   }, [navigate]);
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
+    const userIdToken = localStorage.getItem("authToken");
     const roomData = {
+      userIdToken,
       roomName,
       isPrivate,
       password: isPrivate ? password : null,
     };
 
-    socket.emit('createRoom', roomData);
+    socket.emit("createRoom", roomData);
     setIsModalOpen(false);
   };
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
+    const userIdToken = localStorage.getItem("authToken");
+    alert(userIdToken, "hello");
     const joinData = {
+      userIdToken,
       roomId: joinRoomId,
       password: joinPassword,
     };
 
-    socket.emit('joinRoom', joinData);
+    socket.emit("joinRoom", joinData);
     setIsJoinModalOpen(false);
   };
 
   return (
-    <div className="bg-[#0a0a0a] w-screen h-screen text-white flex justify-center items-center p-4" style={{ fontFamily: 'Orbitron' }}>
+    <div
+      className="bg-[#0a0a0a] w-screen h-screen text-white flex justify-center items-center p-4"
+      style={{ fontFamily: "Orbitron" }}
+    >
       {/* Main container */}
-      <div className="w-[80vw] h-[90vh] grid grid-cols-1 md:grid-cols-[70%,30%] gap-6 border border-gray-700 p-6 rounded-lg bg-[#1a1a1a]" style={{
-        background: 'linear-gradient(145deg, #1b1b1b, #0e0e0e)',
-        boxShadow: '0px 6px 12px rgba(0, 0, 0, 0.3)'
-      }}>
+      <div
+        className="w-[80vw] h-[90vh] grid grid-cols-1 md:grid-cols-[70%,30%] gap-6 border border-gray-700 p-6 rounded-lg bg-[#1a1a1a]"
+        style={{
+          background: "linear-gradient(145deg, #1b1b1b, #0e0e0e)",
+          boxShadow: "0px 6px 12px rgba(0, 0, 0, 0.3)",
+        }}
+      >
         <div className="flex flex-col p-4">
           <h2 className="text-2xl font-semibold mb-4">ROOMS</h2>
           {/* Room list can be added here */}
@@ -105,11 +120,14 @@ function Main() {
       {/* Modal for Creating a Room */}
       {isModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg w-[90vw] md:w-[40vw] text-center" style={{
-            boxShadow: '0px 6px 12px rgba(0, 0, 0, 0.3)',
-            transform: 'scale(0.95)',
-            transition: 'transform 0.3s ease-in-out'
-          }}>
+          <div
+            className="bg-[#1a1a1a] p-6 rounded-lg w-[90vw] md:w-[40vw] text-center"
+            style={{
+              boxShadow: "0px 6px 12px rgba(0, 0, 0, 0.3)",
+              transform: "scale(0.95)",
+              transition: "transform 0.3s ease-in-out",
+            }}
+          >
             <h2 className="text-2xl font-semibold mb-4">Create a New Room</h2>
             <input
               type="text"
@@ -159,12 +177,17 @@ function Main() {
       {/* Modal for Joining a Room */}
       {isJoinModalOpen && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex justify-center items-center z-50">
-          <div className="bg-[#1a1a1a] p-6 rounded-lg w-[90vw] md:w-[40vw] text-center" style={{
-            boxShadow: '0px 6px 12px rgba(0, 0, 0, 0.3)',
-            transform: 'scale(0.95)',
-            transition: 'transform 0.3s ease-in-out'
-          }}>
-            <h2 className="text-2xl font-semibold mb-4">Join an Existing Room</h2>
+          <div
+            className="bg-[#1a1a1a] p-6 rounded-lg w-[90vw] md:w-[40vw] text-center"
+            style={{
+              boxShadow: "0px 6px 12px rgba(0, 0, 0, 0.3)",
+              transform: "scale(0.95)",
+              transition: "transform 0.3s ease-in-out",
+            }}
+          >
+            <h2 className="text-2xl font-semibold mb-4">
+              Join an Existing Room
+            </h2>
             <input
               type="text"
               placeholder="Room ID"

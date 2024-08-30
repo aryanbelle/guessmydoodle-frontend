@@ -7,7 +7,6 @@ import axios from "axios";
 function SignIn() {
     const navigate = useNavigate();
 
-    // Inside SignIn.js after successful sign-in
     const handleGoogleSignIn = async () => {
         try {
             const result = await signInWithPopup(auth, provider);
@@ -20,7 +19,6 @@ function SignIn() {
                     Authorization: `Bearer ${idToken}`
                 }
             });
-            console.log(response.data.isSignedIn);
             if (response.data.isSignedIn) {
                 navigate("/main");
             }
@@ -38,13 +36,13 @@ function SignIn() {
             const result = await signInAnonymously(auth);
             const idToken = await result.user.getIdToken();
             console.log("Anonymous User ID Token:", idToken);
-
+            localStorage.setItem("authToken", idToken);
             const response = await axios.post('http://localhost:5000/auth/authentication', {}, {
                 headers: {
                     Authorization: `Bearer ${idToken}`
                 }
             });
-            console.log(response.data + " THISISISISISR EPSONSE")
+
             if (response.data.success) {
                 console.log('ky vishy nyi ghe')
                 navigate("/main");

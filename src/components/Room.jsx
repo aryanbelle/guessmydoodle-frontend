@@ -19,21 +19,35 @@ function Room() {
 
   useEffect(() => {
     if (roomId) {
-      socket.emit('joinRoom', { roomId });
+      const userIdToken = localStorage.getItem("authToken");
+      socket.emit('joinRoom', { userIdToken, roomId });
 
       socket.on('userJoined', (data) => {
         alert(data.message);
       });
 
-      socket.on('draw', ({ roomId, line }) => {
-        console.log('Received line:', line);
-        if (roomId === roomId) {
+      socket.on('draw', ({ roomId: rId, line }) => {
+        if (rId === roomId) {
           setLines((prevLines) => [...prevLines, line]);
+        }
+      });
+
+      socket.on('undo', ({ roomId: rId, updatedLines }) => {
+        if (rId === roomId) {
+          setLines(updatedLines);
+        }
+      });
+
+      socket.on('redo', ({ roomId: rId, updatedLines }) => {
+        if (rId === roomId) {
+          setLines(updatedLines);
         }
       });
 
       return () => {
         socket.off('draw');
+        socket.off('undo');
+        socket.off('redo');
         socket.off('userJoined');
       };
     }
@@ -43,8 +57,15 @@ function Room() {
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
     if (pos) {
-      const newLine = { tool, points: [pos.x, pos.y], color: brushColor, size: brushSize };
+      const newLine = {
+        tool,
+        points: [pos.x, pos.y],
+        color: tool === 'eraser' ? '#0a0a0a' : brushColor, // Set the color to background color when using eraser
+        size: brushSize,
+      };
       setLines([...lines, newLine]);
+      setUndoStack([...undoStack, lines]);
+      setRedoStack([]);
       socket.emit('draw', { roomId, line: newLine });
     }
   };
@@ -53,38 +74,20 @@ function Room() {
     if (!isDrawing.current) return;
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
-
     if (!point) return;
 
     setLines((prevLines) => {
-      const newLines = [...prevLines];
-      const lastLine = newLines[newLines.length - 1];
+      const lastLine = { ...prevLines[prevLines.length - 1] };
+      lastLine.points = lastLine.points.concat([point.x, point.y]);
 
-      if (lastLine && lastLine.tool === 'pen') {
-        lastLine.points = lastLine.points.concat([point.x, point.y]);
-        socket.emit('draw', { roomId, line: lastLine });
-      } else if (lastLine && lastLine.tool === 'eraser') {
-        const updatedPoints = [];
-        for (let i = 0; i < lastLine.points.length; i += 2) {
-          const x = lastLine.points[i];
-          const y = lastLine.points[i + 1];
-          if (Math.hypot(x - point.x, y - point.y) > brushSize) {
-            updatedPoints.push(x, y);
-          }
-        }
-        lastLine.points = updatedPoints;
-        socket.emit('draw', { roomId, line: lastLine });
-      }
-
+      const newLines = prevLines.slice(0, prevLines.length - 1).concat(lastLine);
+      socket.emit('draw', { roomId, line: lastLine });
       return newLines;
     });
   };
 
   const handleMouseUp = () => {
-    if (isDrawing.current) {
-      setUndoStack([...undoStack, [...lines]]);
-      isDrawing.current = false;
-    }
+    isDrawing.current = false;
   };
 
   const undo = () => {
@@ -92,6 +95,7 @@ function Room() {
     const previousState = undoStack.pop();
     setRedoStack([lines, ...redoStack]);
     setLines(previousState);
+    socket.emit('undo', { roomId, updatedLines: previousState });
   };
 
   const redo = () => {
@@ -99,6 +103,7 @@ function Room() {
     const nextState = redoStack.shift();
     setUndoStack([...undoStack, lines]);
     setLines(nextState);
+    socket.emit('redo', { roomId, updatedLines: nextState });
   };
 
   return (
