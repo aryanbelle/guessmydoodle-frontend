@@ -3,11 +3,11 @@ import { useParams } from 'react-router-dom';
 import { Stage, Layer, Line } from 'react-konva';
 import { ReactComponent as PencilIcon } from '../assets/icons/pencil.svg';
 import { ReactComponent as EraserIcon } from '../assets/icons/eraser.svg';
-import io from 'socket.io-client';
-
-const socket = io('http://localhost:5000');
+import io from "socket.io-client";
+import { auth } from '../lib/firebaseConfig';
 
 function Room() {
+  const socket = useRef(null);
   const { roomId } = useParams();
   const [tool, setTool] = useState('pen');
   const [lines, setLines] = useState([]);
@@ -20,43 +20,51 @@ function Room() {
   const isDrawing = useRef(false);
 
   useEffect(() => {
-    if (roomId) {
-      socket.emit('joinRoom', { roomId });
+    const getIdToken = async () => {
+      socket.current = io('http://localhost:5000');
+      const userIdToken = await auth.currentUser.getIdToken();
 
-      socket.on('userJoined', (data) => {
-        alert(data.message);
-      });
+      const joinData = { userIdToken, roomId };
+      if (roomId) {
+        socket.current.emit('joinRoom', joinData);
 
-      socket.on('draw', ({ roomId: rId, line }) => {
-        if (rId === roomId) {
-          setLines((prevLines) => [...prevLines, line]);
-        }
-      });
+        socket.current.on('userJoined', (data) => {
+          alert(data.message);
+        });
 
-      socket.on('undo', ({ roomId: rId, updatedLines }) => {
-        if (rId === roomId) {
-          setLines(updatedLines);
-        }
-      });
+        socket.current.on('draw', ({ roomId: rId, line }) => {
+          if (rId === roomId) {
+            setLines((prevLines) => [...prevLines, line]);
+          }
+        });
 
-      socket.on('redo', ({ roomId: rId, updatedLines }) => {
-        if (rId === roomId) {
-          setLines(updatedLines);
-        }
-      });
+        socket.current.on('undo', ({ roomId: rId, updatedLines }) => {
+          if (rId === roomId) {
+            setLines(updatedLines);
+          }
+        });
 
-      socket.on('message', (message) => {
-        setMessages((prevMessages) => [...prevMessages, message]);
-      });
+        socket.current.on('redo', ({ roomId: rId, updatedLines }) => {
+          if (rId === roomId) {
+            setLines(updatedLines);
+          }
+        });
 
-      return () => {
-        socket.off('draw');
-        socket.off('undo');
-        socket.off('redo');
-        socket.off('userJoined');
-        socket.off('message');
-      };
+        socket.current.on('message', (message) => {
+          setMessages((prevMessages) => [...prevMessages, message]);
+        });
+
+        return () => {
+          socket.current.off('draw');
+          socket.current.off('undo');
+          socket.current.off('redo');
+          socket.current.off('userJoined');
+          socket.current.off('message');
+          socket.current.disconnect();
+        };
+      }
     }
+    getIdToken();
   }, [roomId]);
 
   const handleMouseDown = (e) => {
@@ -72,7 +80,7 @@ function Room() {
       setLines([...lines, newLine]);
       setUndoStack([...undoStack, lines]);
       setRedoStack([]);
-      socket.emit('draw', { roomId, line: newLine });
+      socket.current.emit('draw', { roomId, line: newLine });
     }
   };
 
@@ -88,7 +96,7 @@ function Room() {
       lastLine.points = lastLine.points.concat([point.x, point.y]);
 
       const newLines = prevLines.slice(0, prevLines.length - 1).concat(lastLine);
-      socket.emit('draw', { roomId, line: lastLine });
+      socket.current.emit('draw', { roomId, line: lastLine });
       return newLines;
     });
   };
@@ -102,7 +110,7 @@ function Room() {
     const previousState = undoStack.pop();
     setRedoStack([lines, ...redoStack]);
     setLines(previousState);
-    socket.emit('undo', { roomId, updatedLines: previousState });
+    socket.current.emit('undo', { roomId, updatedLines: previousState });
   };
 
   const redo = () => {
@@ -110,12 +118,12 @@ function Room() {
     const nextState = redoStack.shift();
     setUndoStack([...undoStack, lines]);
     setLines(nextState);
-    socket.emit('redo', { roomId, updatedLines: nextState });
+    socket.current.emit('redo', { roomId, updatedLines: nextState });
   };
 
   const sendMessage = () => {
     if (newMessage.trim()) {
-      socket.emit('message', { roomId, message: newMessage });
+      socket.current.emit('message', { roomId, message: newMessage });
       setNewMessage('');
     }
   };
@@ -179,7 +187,7 @@ function Room() {
           </div>
         </div>
         <Stage
-          width={window.innerWidth - 300} // Adjust width based on the chat panel width
+          width={window.innerWidth - 462} // Adjust width based on the chat panel width
           height={window.innerHeight - 120} // Adjust height based on the tools panel height
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}

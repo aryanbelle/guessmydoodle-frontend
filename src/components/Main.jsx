@@ -1,10 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import io from 'socket.io-client';
 import { useNavigate } from 'react-router-dom';
-
-const socket = io('http://localhost:5000');
+import { auth } from '../lib/firebaseConfig';
 
 function Main() {
+  const socket = useRef(null);
   const navigate = useNavigate();
 
   const [isModalOpen, setIsModalOpen] = useState(false);
@@ -16,47 +16,58 @@ function Main() {
   const [joinPassword, setJoinPassword] = useState('');
 
   useEffect(() => {
+    socket.current = io('http://localhost:5000');
+
     // Setup event listeners
-    socket.on('connect', () => {
-      console.log('Socket connected:', socket.id);
+    socket.current.on('connect', () => {
+      console.log('Socket connected:', socket.current.id);
     });
 
-    socket.on('roomCreated', (room) => {
+    socket.current.on('roomCreated', (room) => {
       console.log('Room created:', room);
       navigate(`/room/${room.id}`);
     });
 
-    socket.on('roomJoined', (room) => {
+    socket.current.on('roomJoined', (room) => {
       console.log('Joined room:', room);
       navigate(`/room/${room.id}`);
     });
 
-    // Cleanup event listeners on component unmount
+    // Cleanup on component unmount
     return () => {
-      socket.off('userJoined');
-      socket.off('roomCreated');
-      socket.off('roomJoined');
+      socket.current.off('connect');
+      socket.current.off('roomCreated');
+      socket.current.off('roomJoined');
+      socket.current.disconnect();
     };
   }, [navigate]);
 
-  const handleCreateRoom = () => {
+  const handleCreateRoom = async () => {
+    const userIdToken = await auth.currentUser.getIdToken();
+    console.log(userIdToken);
     const roomData = {
+      userIdToken,
       roomName,
       isPrivate,
       password: isPrivate ? password : null,
     };
 
-    socket.emit('createRoom', roomData);
+    socket.current.emit('createRoom', roomData);
+    
     setIsModalOpen(false);
   };
 
-  const handleJoinRoom = () => {
+  const handleJoinRoom = async () => {
+    const userIdToken = await auth.currentUser.getIdToken();
+    console.log(userIdToken);
     const joinData = {
+      userIdToken,
       roomId: joinRoomId,
       password: joinPassword,
     };
 
-    socket.emit('joinRoom', joinData);
+    socket.current.emit('joinRoom', joinData);
+    
     setIsJoinModalOpen(false);
   };
 
