@@ -19,12 +19,10 @@ function Main() {
   useEffect(() => {
 
     socket.on("roomCreated", (room) => {
-      // console.log("Room created:", room);
       navigate(`/room/${room.id}`);
     });
 
     socket.on("roomJoined", (room) => {
-      // console.log("Joined room:", room);
       navigate(`/room/${room.id}`);
     });
 
@@ -51,7 +49,9 @@ function Main() {
   }, [navigate]);
 
   const handleCreateRoom = async () => {
+    socket.connect();
     const userIdToken = localStorage.getItem("authToken");
+    alert(userIdToken);
     const roomData = {
       userIdToken,
       roomName,
@@ -59,7 +59,6 @@ function Main() {
       password: isPrivate ? password : null,
     };
 
-    socket.connect();
     socket.emit("createRoom", roomData);
     setIsModalOpen(false);
   };

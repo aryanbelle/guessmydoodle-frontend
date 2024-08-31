@@ -4,6 +4,7 @@ import { Stage, Layer, Line } from "react-konva";
 import { ReactComponent as PencilIcon } from "../assets/icons/pencil.svg";
 import { ReactComponent as EraserIcon } from "../assets/icons/eraser.svg";
 import io from "socket.io-client";
+import { auth } from '../lib/firebaseConfig';
 
 const socket = io("http://localhost:5000");
 
@@ -17,27 +18,30 @@ function Room() {
   const [redoStack, setRedoStack] = useState([]);
   const [messages, setMessages] = useState([]);
   const [message, setMessage] = useState("");
+  const [myNickname, setMyNickname] = useState(null);
+  const [isMsgFromMe, setIsMsgFromMe] = useState(false);
+  const [authKey, setAuthKey] = useState(null);
   const isDrawing = useRef(false);
 
-  const [userIdToken, setUserIdToken] = useState("");
-
   useEffect(() => {
+
     if (roomId) {
       socket.connect();
 
-      const getToken = localStorage.getItem("authToken");
-      setUserIdToken(getToken);
-      socket.emit("joinRoom", { userIdToken, roomId });
+      const userIdToken = localStorage.getItem("authToken");
 
+      socket.emit("joinRoom", { userIdToken, roomId });
       socket.on("userJoined", (data) => {
-        // alert(data.message);
+
       });
 
-      socket.on("recieve-message", ({ roomId: rId, message }) => {
-        if (rId === roomId) {
-          setMessages((prevMessages) => [...prevMessages, message]);
-          alert(message.text);
-        }
+      socket.on("roomJoined", ({ roomId: rId, userAuthkey, nickname }) => {
+        setMyNickname(nickname);
+        setAuthKey(userAuthkey);
+      })
+
+      socket.on("recieve-message", ({ roomId, ...msg }) => {
+        setMessages((prevMessages) => [...prevMessages, msg]);
       })
 
       socket.on("draw", ({ roomId: rId, line }) => {
@@ -58,22 +62,16 @@ function Room() {
         }
       });
 
-      socket.on("message", ({ roomId: rId, message }) => {
-        if (rId === roomId) {
-          setMessages((prevMessages) => [...prevMessages, message]);
-        }
-      });
-
       socket.on("start-game", ({ roomId, message }) => {
-        // alert(message);
 
-        socket.emit("game-started", roomId)
+        // 
+
 
       });
 
       socket.on("disconnect", (reason) => {
         if (socket.active) {
-          // alert("temporary disconnect");
+          socket.connect();
         } else {
           // alert("room disconnected");
         }
@@ -98,7 +96,7 @@ function Room() {
       const newLine = {
         tool,
         points: [pos.x, pos.y],
-        color: tool === "eraser" ? "#0a0a0a" : brushColor, // Set the color to background color when using eraser
+        color: tool === "eraser" ? "#0a0a0a" : brushColor,
         size: brushSize,
       };
       setLines([...lines, newLine]);
@@ -149,17 +147,19 @@ function Room() {
   const sendMessage = () => {
     if (message.trim() === "") return;
 
-    
-    const newMessage = {
-      text: message,
-      timestamp: new Date().toLocaleTimeString(),
+    const messageData = {
+      roomId,
+      message,
+      userAuthkey: authKey
     };
+    // alert(myNickname)
+    // console.log(messages);
 
-    setMessages([...messages, newMessage]);
 
-    socket.emit("message", { roomId, message: newMessage });
+    socket.emit("message", messageData);
     setMessage("");
   };
+
 
   return (
     <div className="bg-[#0a0a0a] h-screen flex">
@@ -248,22 +248,27 @@ function Room() {
           {messages.map((msg, index) => (
             <div
               key={index}
-              className={`flex ${msg.user === "You" ? "justify-end" : "justify-start"
-                }`}
+              className={`flex ${msg.nickname === myNickname ? "justify-end" : "justify-start"}`}
             >
               <div
-                className={`${msg.user === "You"
-                  ? " bg-indigo-800 text-white"
+                className={`${msg.nickname === myNickname
+                  ? "bg-violet-800 text-white text-right"
                   : "bg-[#4b4b4b] text-white font-medium"
-                  } max-w-xs rounded-lg p-2`}
+                  } min-w-25 max-w-sm rounded-lg p-2`}
               >
-                <div className="text-xs mb-1">
-                  {msg.user} • {msg.timestamp}
+                <div>
+                  <div className="text-xs">
+                    {msg.nickname.length > 15 ? msg.nickname.substring(0, 15) + '...' : msg.nickname}
+                  </div>
+                  <div className="text-sm">{msg.message}</div>
+                  <div className="text-xs mb-1">
+                    {msg.timeStamp}
+                  </div>
                 </div>
-                <div className="text-sm">{msg.text}</div>
               </div>
             </div>
           ))}
+
         </div>
         <div className="flex items-center">
           <input
@@ -276,7 +281,7 @@ function Room() {
           />
           <button
             onClick={sendMessage}
-            className="px-4 py-2 rounded-lg rounded-l-none bg-indigo-600 text-white hover:bg- transition duration-200"
+            className="px-4 py-2 rounded-lg rounded-l-none bg-indigo-600 text-white hover:bg-indigo-800 transition duration-200"
           >
             Send
           </button>
