@@ -1,7 +1,6 @@
 import React, { useState, useEffect } from "react";
 import io from "socket.io-client";
 import { useNavigate } from "react-router-dom";
-import { auth } from "../lib/firebaseConfig";
 
 const socket = io("http://localhost:5000");
 
@@ -15,31 +14,39 @@ function Main() {
   const [password, setPassword] = useState("");
   const [joinRoomId, setJoinRoomId] = useState("");
   const [joinPassword, setJoinPassword] = useState("");
+  const [message, setMessage] = useState(null);
 
   useEffect(() => {
-    socket.on("connect", () => {
-      console.log("Socket connected:", socket.id);
-    });
 
     socket.on("roomCreated", (room) => {
-      console.log("Room created:", room);
+      // console.log("Room created:", room);
       navigate(`/room/${room.id}`);
     });
 
     socket.on("roomJoined", (room) => {
-      console.log("Joined room:", room);
+      // console.log("Joined room:", room);
       navigate(`/room/${room.id}`);
     });
 
     socket.on("roomJoinError", (data) => {
-      alert(data.message);
+      // alert(data.message);
     });
+
+    socket.on("disconnect", (reason) => {
+      if (socket.active) {
+        // alert('temparory disconnected')
+      } else {
+        // alert('main disconnected')
+      }
+    })
 
     // Cleanup event listeners on component unmount
     return () => {
-      socket.off("userJoined");
+      // socket.off("userJoined");
+      socket.off("roomJoinError");
       socket.off("roomCreated");
       socket.off("roomJoined");
+      socket.disconnect();
     };
   }, [navigate]);
 
@@ -52,6 +59,7 @@ function Main() {
       password: isPrivate ? password : null,
     };
 
+    socket.connect();
     socket.emit("createRoom", roomData);
     setIsModalOpen(false);
   };
@@ -60,11 +68,11 @@ function Main() {
     const userIdToken = localStorage.getItem("authToken");
     alert(userIdToken, "hello");
     const joinData = {
-      userIdToken,
       roomId: joinRoomId,
       password: joinPassword,
+      userIdToken,
     };
-
+    socket.connect();
     socket.emit("joinRoom", joinData);
     setIsJoinModalOpen(false);
   };
