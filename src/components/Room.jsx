@@ -3,6 +3,7 @@ import { useParams } from "react-router-dom";
 import { Stage, Layer, Line } from "react-konva";
 import { ReactComponent as PencilIcon } from "../assets/icons/pencil.svg";
 import { ReactComponent as EraserIcon } from "../assets/icons/eraser.svg";
+import { ReactComponent as SendIcon } from "../assets/icons/sendmsg.svg";
 import io from "socket.io-client";
 import { auth } from '../lib/firebaseConfig';
 
@@ -27,10 +28,15 @@ function Room() {
 
     if (roomId) {
       socket.connect();
+      const storedMessages = localStorage.getItem("messages");
+      if (storedMessages) {
+        setMessages(JSON.parse(storedMessages));
+      }
 
       const userIdToken = localStorage.getItem("authToken");
-
+      console.log(userIdToken)
       socket.emit("joinRoom", { userIdToken, roomId });
+
       socket.on("userJoined", (data) => {
 
       });
@@ -40,9 +46,17 @@ function Room() {
         setAuthKey(userAuthkey);
       })
 
-      socket.on("recieve-message", ({ roomId, ...msg }) => {
-        setMessages((prevMessages) => [...prevMessages, msg]);
+      socket.on("requestAuthKey", async () => {
+        socket.emit("responseAuthKey", { userAuthkey: authKey });
       })
+
+      socket.on("recieve-message", ({ roomId, ...msg }) => {
+        setMessages((prevMessages) => {
+          const updatedMessages = [...prevMessages, msg];
+          localStorage.setItem("messages", JSON.stringify(updatedMessages)); // Save to localStorage
+          return updatedMessages;
+        });
+      });
 
       socket.on("draw", ({ roomId: rId, line }) => {
         if (rId === roomId) {
@@ -63,27 +77,24 @@ function Room() {
       });
 
       socket.on("start-game", ({ roomId, message }) => {
-
-        // 
-
-
+        alert(message);
+        socket.emit("join-game", { roomId, userAuthkey: authKey });
       });
 
       socket.on("disconnect", (reason) => {
-        if (socket.active) {
-          socket.connect();
-        } else {
-          // alert("room disconnected");
-        }
+        socket.connect();
+        socket.emit("joinRoom", { userIdToken, roomId });
       });
-
       return () => {
+
         socket.off("start-game");
         socket.off("draw");
         socket.off("undo");
         socket.off("redo");
         socket.off("message");
         socket.off("userJoined");
+
+
         socket.disconnect();
       };
     }
@@ -152,9 +163,6 @@ function Room() {
       message,
       userAuthkey: authKey
     };
-    // alert(myNickname)
-    // console.log(messages);
-
 
     socket.emit("message", messageData);
     setMessage("");
@@ -250,19 +258,22 @@ function Room() {
               key={index}
               className={`flex ${msg.nickname === myNickname ? "justify-end" : "justify-start"}`}
             >
-              <div
-                className={`${msg.nickname === myNickname
-                  ? "bg-violet-800 text-white text-right"
-                  : "bg-[#4b4b4b] text-white font-medium"
-                  } min-w-25 max-w-sm rounded-lg p-2`}
-              >
-                <div>
-                  <div className="text-xs">
-                    {msg.nickname.length > 15 ? msg.nickname.substring(0, 15) + '...' : msg.nickname}
-                  </div>
-                  <div className="text-sm">{msg.message}</div>
-                  <div className="text-xs mb-1">
-                    {msg.timeStamp}
+              <div className="flex-col">
+                <div className={`${msg.nickname === myNickname ? "text-right" : "text-left"} text-xs text-white`}>
+                  {msg.nickname.length > 15 ? msg.nickname.substring(0, 15) + '...' : msg.nickname}
+                </div>
+                <div
+                  className={`${msg.nickname === myNickname
+                    ? "bg-indigo-800 text-white text-right rounded-tr-none"
+                    : "bg-[#4b4b4b] text-white font-medium rounded-tl-none"
+                    } min-w-36 max-w-lg rounded-lg p-2`}
+                >
+                  <div>
+
+                    <div className="text-sm">{msg.message}</div>
+                    <div className="text-xs mb-1">
+                      {msg.timeStamp}
+                    </div>
                   </div>
                 </div>
               </div>
@@ -272,7 +283,7 @@ function Room() {
         </div>
         <div className="flex items-center">
           <input
-            className="flex-grow bg-[#2b2b2b] text-white rounded-lg rounded-r-none p-2 focus:outline-none"
+            className="flex-grow px-5 py-3 bg-[#2b2b2b] text-white rounded-lg rounded-r-none p-2 focus:outline-none"
             type="text"
             placeholder="Type your message..."
             value={message}
@@ -281,9 +292,10 @@ function Room() {
           />
           <button
             onClick={sendMessage}
-            className="px-4 py-2 rounded-lg rounded-l-none bg-indigo-600 text-white hover:bg-indigo-800 transition duration-200"
+            className="px-5 py-3 flex rounded-lg rounded-l-none bg-indigo-600 text-white hover:bg-indigo-800 transition duration-200"
           >
             Send
+            <SendIcon className="ml-2 items-center w-5 h-5" />
           </button>
         </div>
       </div>

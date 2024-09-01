@@ -33,6 +33,7 @@ function Main() {
     socket.on("disconnect", (reason) => {
       if (socket.active) {
         // alert('temparory disconnected')
+        socket.connect();
       } else {
         // alert('main disconnected')
       }
@@ -167,6 +168,7 @@ function Main() {
               <button
                 onClick={handleCreateRoom}
                 className="p-2 bg-[#2b2b2b] rounded-md hover:bg-[#3a3a3a] transition duration-300"
+                onKeyPress={(e) => e.key === "Enter" && handleCreateRoom()}
               >
                 Create Room
               </button>
