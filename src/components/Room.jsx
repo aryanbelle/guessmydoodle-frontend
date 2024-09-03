@@ -23,15 +23,12 @@ function Room() {
   const [isMsgFromMe, setIsMsgFromMe] = useState(false);
   const [authKey, setAuthKey] = useState(null);
   const isDrawing = useRef(false);
+  const [isMyTurn, setIsMyTurn] = useState(false);
 
   useEffect(() => {
 
     if (roomId) {
       socket.connect();
-      const storedMessages = localStorage.getItem("messages");
-      if (storedMessages) {
-        setMessages(JSON.parse(storedMessages));
-      }
 
       const userIdToken = localStorage.getItem("authToken");
       console.log(userIdToken)
@@ -43,19 +40,16 @@ function Room() {
 
       socket.on("roomJoined", ({ roomId: rId, userAuthkey, nickname }) => {
         setMyNickname(nickname);
+        localStorage.setItem("myauthkey", userAuthkey);
         setAuthKey(userAuthkey);
       })
 
-      socket.on("requestAuthKey", async () => {
-        socket.emit("responseAuthKey", { userAuthkey: authKey });
-      })
+      // socket.on("requestAuthKey", async () => {
+      //   socket.emit("responseAuthKey", { userAuthkey: authKey });
+      // })
 
       socket.on("recieve-message", ({ roomId, ...msg }) => {
-        setMessages((prevMessages) => {
-          const updatedMessages = [...prevMessages, msg];
-          localStorage.setItem("messages", JSON.stringify(updatedMessages)); // Save to localStorage
-          return updatedMessages;
-        });
+        setMessages((prevMessages) => [...prevMessages, msg]);
       });
 
       socket.on("draw", ({ roomId: rId, line }) => {
@@ -78,29 +72,42 @@ function Room() {
 
       socket.on("start-game", ({ roomId, message }) => {
         alert(message);
-        socket.emit("join-game", { roomId, userAuthkey: authKey });
+        socket.emit("game-started", { roomId, userAuthkey: authKey });
       });
 
+      socket.on('request-player-authKey', () => {
+        alert("socket id requested")
+        const myAuthKey = localStorage.getItem("myauthkey");
+        socket.emit("client-auth-key", myAuthKey);
+      });
+
+      socket.on("start-drawing", ({ word, roomId }) => {
+        setIsMyTurn(true);
+        alert('You have to draw ' + word);
+      })
+      socket.on("drawing-started", ({ roomId, currentPlayer }) => {
+        alert(`${currentPlayer}'s turn`)
+      })
       socket.on("disconnect", (reason) => {
-        socket.connect();
-        socket.emit("joinRoom", { userIdToken, roomId });
+          socket.connect();
+          socket.emit("joinRoom", { userIdToken, roomId });
       });
       return () => {
-
+        socket.off("request-player-authKey");
+        socket.off("drawing-starated");
         socket.off("start-game");
         socket.off("draw");
         socket.off("undo");
         socket.off("redo");
         socket.off("message");
         socket.off("userJoined");
-
-
         socket.disconnect();
       };
     }
   }, [roomId]);
 
   const handleMouseDown = (e) => {
+    if (!isMyTurn) return;
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
     if (pos) {
@@ -118,7 +125,7 @@ function Room() {
   };
 
   const handleMouseMove = (e) => {
-    if (!isDrawing.current) return;
+    if (!isMyTurn || !isDrawing.current) return;
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
     if (!point) return;
@@ -136,6 +143,7 @@ function Room() {
   };
 
   const handleMouseUp = () => {
+    if (!isMyTurn) return;
     isDrawing.current = false;
   };
 
@@ -234,6 +242,7 @@ function Room() {
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+
           className="bg-[#0a0a0a] rounded-lg"
         >
           <Layer>
@@ -289,6 +298,7 @@ function Room() {
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+            disabled={isMyTurn ? true : false}
           />
           <button
             onClick={sendMessage}

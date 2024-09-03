@@ -31,17 +31,12 @@ function Main() {
     });
 
     socket.on("disconnect", (reason) => {
-      if (socket.active) {
-        // alert('temparory disconnected')
-        socket.connect();
-      } else {
-        // alert('main disconnected')
-      }
+      socket.connect();
     })
 
-    // Cleanup event listeners on component unmount
     return () => {
-      // socket.off("userJoined");
+      socket.off("createRoom");
+      socket.off("joinRoom");
       socket.off("roomJoinError");
       socket.off("roomCreated");
       socket.off("roomJoined");
@@ -50,23 +45,21 @@ function Main() {
   }, [navigate]);
 
   const handleCreateRoom = async () => {
-    socket.connect();
     const userIdToken = localStorage.getItem("authToken");
-    alert(userIdToken);
     const roomData = {
       userIdToken,
       roomName,
       isPrivate,
       password: isPrivate ? password : null,
     };
-
+    socket.connect();
     socket.emit("createRoom", roomData);
     setIsModalOpen(false);
   };
 
   const handleJoinRoom = async () => {
     const userIdToken = localStorage.getItem("authToken");
-    alert(userIdToken, "hello");
+
     const joinData = {
       roomId: joinRoomId,
       password: joinPassword,
