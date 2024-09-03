@@ -1,92 +1,131 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { useParams } from 'react-router-dom';
-import { Stage, Layer, Line } from 'react-konva';
-import { ReactComponent as PencilIcon } from '../assets/icons/pencil.svg';
-import { ReactComponent as EraserIcon } from '../assets/icons/eraser.svg';
+import React, { useState, useRef, useEffect } from "react";
+import { useParams } from "react-router-dom";
+import { Stage, Layer, Line } from "react-konva";
+import { ReactComponent as PencilIcon } from "../assets/icons/pencil.svg";
+import { ReactComponent as EraserIcon } from "../assets/icons/eraser.svg";
+import { ReactComponent as SendIcon } from "../assets/icons/sendmsg.svg";
 import io from "socket.io-client";
 import { auth } from '../lib/firebaseConfig';
 
+const socket = io("http://localhost:5000");
+
 function Room() {
-  const socket = useRef(null);
   const { roomId } = useParams();
-  const [tool, setTool] = useState('pen');
+  const [tool, setTool] = useState("pen");
   const [lines, setLines] = useState([]);
-  const [brushColor, setBrushColor] = useState('#ffffff');
+  const [brushColor, setBrushColor] = useState("#ffffff");
   const [brushSize, setBrushSize] = useState(5);
   const [undoStack, setUndoStack] = useState([]);
   const [redoStack, setRedoStack] = useState([]);
   const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
+  const [message, setMessage] = useState("");
+  const [myNickname, setMyNickname] = useState(null);
+  const [isMsgFromMe, setIsMsgFromMe] = useState(false);
+  const [authKey, setAuthKey] = useState(null);
   const isDrawing = useRef(false);
+  const [isMyTurn, setIsMyTurn] = useState(false);
 
   useEffect(() => {
-    const getIdToken = async () => {
-      socket.current = io('http://localhost:5000');
-      const userIdToken = await auth.currentUser.getIdToken();
 
-      const joinData = { userIdToken, roomId };
-      if (roomId) {
-        socket.current.emit('joinRoom', joinData);
+    if (roomId) {
+      socket.connect();
 
-        socket.current.on('userJoined', (data) => {
-          alert(data.message);
-        });
+      const userIdToken = localStorage.getItem("authToken");
+      console.log(userIdToken)
+      socket.emit("joinRoom", { userIdToken, roomId });
 
-        socket.current.on('draw', ({ roomId: rId, line }) => {
-          if (rId === roomId) {
-            setLines((prevLines) => [...prevLines, line]);
-          }
-        });
+      socket.on("userJoined", (data) => {
 
-        socket.current.on('undo', ({ roomId: rId, updatedLines }) => {
-          if (rId === roomId) {
-            setLines(updatedLines);
-          }
-        });
+      });
 
-        socket.current.on('redo', ({ roomId: rId, updatedLines }) => {
-          if (rId === roomId) {
-            setLines(updatedLines);
-          }
-        });
+      socket.on("roomJoined", ({ roomId: rId, userAuthkey, nickname }) => {
+        setMyNickname(nickname);
+        localStorage.setItem("myauthkey", userAuthkey);
+        setAuthKey(userAuthkey);
+      })
 
-        socket.current.on('message', (message) => {
-          setMessages((prevMessages) => [...prevMessages, message]);
-        });
+      // socket.on("requestAuthKey", async () => {
+      //   socket.emit("responseAuthKey", { userAuthkey: authKey });
+      // })
 
-        return () => {
-          socket.current.off('draw');
-          socket.current.off('undo');
-          socket.current.off('redo');
-          socket.current.off('userJoined');
-          socket.current.off('message');
-          socket.current.disconnect();
-        };
-      }
+      socket.on("recieve-message", ({ roomId, ...msg }) => {
+        setMessages((prevMessages) => [...prevMessages, msg]);
+      });
+
+      socket.on("draw", ({ roomId: rId, line }) => {
+        if (rId === roomId) {
+          setLines((prevLines) => [...prevLines, line]);
+        }
+      });
+
+      socket.on("undo", ({ roomId: rId, updatedLines }) => {
+        if (rId === roomId) {
+          setLines(updatedLines);
+        }
+      });
+
+      socket.on("redo", ({ roomId: rId, updatedLines }) => {
+        if (rId === roomId) {
+          setLines(updatedLines);
+        }
+      });
+
+      socket.on("start-game", ({ roomId, message }) => {
+        alert(message);
+        socket.emit("game-started", { roomId, userAuthkey: authKey });
+      });
+
+      socket.on('request-player-authKey', () => {
+        alert("socket id requested")
+        const myAuthKey = localStorage.getItem("myauthkey");
+        socket.emit("client-auth-key", myAuthKey);
+      });
+
+      socket.on("start-drawing", ({ word, roomId }) => {
+        setIsMyTurn(true);
+        alert('You have to draw ' + word);
+      })
+      socket.on("drawing-started", ({ roomId, currentPlayer }) => {
+        alert(`${currentPlayer}'s turn`)
+      })
+      socket.on("disconnect", (reason) => {
+          socket.connect();
+          socket.emit("joinRoom", { userIdToken, roomId });
+      });
+      return () => {
+        socket.off("request-player-authKey");
+        socket.off("drawing-starated");
+        socket.off("start-game");
+        socket.off("draw");
+        socket.off("undo");
+        socket.off("redo");
+        socket.off("message");
+        socket.off("userJoined");
+        socket.disconnect();
+      };
     }
-    getIdToken();
   }, [roomId]);
 
   const handleMouseDown = (e) => {
+    if (!isMyTurn) return;
     isDrawing.current = true;
     const pos = e.target.getStage().getPointerPosition();
     if (pos) {
       const newLine = {
         tool,
         points: [pos.x, pos.y],
-        color: tool === 'eraser' ? '#0a0a0a' : brushColor,
+        color: tool === "eraser" ? "#0a0a0a" : brushColor,
         size: brushSize,
       };
       setLines([...lines, newLine]);
       setUndoStack([...undoStack, lines]);
       setRedoStack([]);
-      socket.current.emit('draw', { roomId, line: newLine });
+      socket.emit("draw", { roomId, line: newLine });
     }
   };
 
   const handleMouseMove = (e) => {
-    if (!isDrawing.current || lines.length === 0) return;
-
+    if (!isMyTurn || !isDrawing.current) return;
     const stage = e.target.getStage();
     const point = stage.getPointerPosition();
     if (!point) return;
@@ -95,13 +134,16 @@ function Room() {
       const lastLine = { ...prevLines[prevLines.length - 1] };
       lastLine.points = lastLine.points.concat([point.x, point.y]);
 
-      const newLines = prevLines.slice(0, prevLines.length - 1).concat(lastLine);
-      socket.current.emit('draw', { roomId, line: lastLine });
+      const newLines = prevLines
+        .slice(0, prevLines.length - 1)
+        .concat(lastLine);
+      socket.emit("draw", { roomId, line: lastLine });
       return newLines;
     });
   };
 
   const handleMouseUp = () => {
+    if (!isMyTurn) return;
     isDrawing.current = false;
   };
 
@@ -110,7 +152,7 @@ function Room() {
     const previousState = undoStack.pop();
     setRedoStack([lines, ...redoStack]);
     setLines(previousState);
-    socket.current.emit('undo', { roomId, updatedLines: previousState });
+    socket.emit("undo", { roomId, updatedLines: previousState });
   };
 
   const redo = () => {
@@ -118,48 +160,56 @@ function Room() {
     const nextState = redoStack.shift();
     setUndoStack([...undoStack, lines]);
     setLines(nextState);
-    socket.current.emit('redo', { roomId, updatedLines: nextState });
+    socket.emit("redo", { roomId, updatedLines: nextState });
   };
 
   const sendMessage = () => {
-    if (newMessage.trim()) {
-      socket.current.emit('message', { roomId, message: newMessage });
-      setNewMessage('');
-    }
+    if (message.trim() === "") return;
+
+    const messageData = {
+      roomId,
+      message,
+      userAuthkey: authKey
+    };
+
+    socket.emit("message", messageData);
+    setMessage("");
   };
 
+
   return (
-    <div className='bg-[#0a0a0a] h-screen flex'>
-      {/* Drawing Area */}
-      <div className='flex-grow w-[70%] flex flex-col'>
-        <div className='bg-[#1e1e1e] p-4 shadow-lg flex justify-between items-center'>
-          <div className='flex space-x-2'>
+    <div className="bg-[#0a0a0a] h-screen flex">
+      <div className="flex flex-col w-3/4 h-full p-4">
+        <div className="bg-[#1e1e1e] p-4 rounded-lg shadow-lg mb-4 flex justify-between items-center">
+          <div className="flex space-x-2">
             <button
-              onClick={() => setTool('pen')}
-              className='px-4 py-2 flex rounded-md text-white bg-[#2b2b2b] hover:bg-[#3a3a3a] transition duration-200'
+              onClick={() => setTool("pen")}
+              className={`px-4 py-2 flex rounded-md text-white ${tool === "pen" ? "bg-[#3a3a3a]" : "bg-[#2b2b2b]"
+                } hover:bg-[#3a3a3a] transition duration-200`}
             >
               <PencilIcon className="w-6 h-6 mr-4" />
               Pencil
             </button>
             <button
-              onClick={() => setTool('eraser')}
-              className='px-4 py-2 flex rounded-md text-white bg-[#2b2b2b] hover:bg-[#3a3a3a] transition duration-200'
+              onClick={() => setTool("eraser")}
+              className={`px-4 py-2 flex rounded-md text-white ${tool === "eraser" ? "bg-[#3a3a3a]" : "bg-[#2b2b2b]"
+                } hover:bg-[#3a3a3a] transition duration-200`}
             >
               <EraserIcon className="w-6 h-6 mr-4" />
               Eraser
             </button>
           </div>
-          <div className='flex space-x-4'>
-            <label className='flex items-center text-gray-300'>
+          <div className="flex space-x-4">
+            <label className="flex items-center text-gray-300">
               Brush Color:
               <input
                 type="color"
                 value={brushColor}
                 onChange={(e) => setBrushColor(e.target.value)}
-                className='ml-2'
+                className="ml-2"
               />
             </label>
-            <label className='flex items-center text-gray-300'>
+            <label className="flex items-center text-gray-300">
               Brush Size:
               <input
                 type="range"
@@ -167,31 +217,33 @@ function Room() {
                 max="20"
                 value={brushSize}
                 onChange={(e) => setBrushSize(parseInt(e.target.value, 10))}
-                className='ml-2'
+                className="ml-2"
               />
             </label>
           </div>
-          <div className='flex space-x-2 mt-4'>
+          <div className="flex space-x-2">
             <button
               onClick={undo}
-              className='px-4 py-2 rounded-md text-white bg-[#2b2b2b] hover:bg-[#3a3a3a] transition duration-200'
+              className="px-4 py-2 rounded-md text-white bg-[#2b2b2b] hover:bg-[#3a3a3a] transition duration-200"
             >
               Undo
             </button>
             <button
               onClick={redo}
-              className='px-4 py-2 rounded-md text-white bg-[#2b2b2b] hover:bg-[#3a3a3a] transition duration-200'
+              className="px-4 py-2 rounded-md text-white bg-[#2b2b2b] hover:bg-[#3a3a3a] transition duration-200"
             >
               Redo
             </button>
           </div>
         </div>
         <Stage
-          width={window.innerWidth - 462} // Adjust width based on the chat panel width
-          height={window.innerHeight - 120} // Adjust height based on the tools panel height
+          width={window.innerWidth * 0.75} // 75% of the screen width
+          height={window.innerHeight * 0.75} // Adjust height accordingly
           onMouseDown={handleMouseDown}
           onMouseMove={handleMouseMove}
           onMouseUp={handleMouseUp}
+
+          className="bg-[#0a0a0a] rounded-lg"
         >
           <Layer>
             {lines.map((line, index) => (
@@ -208,34 +260,52 @@ function Room() {
           </Layer>
         </Stage>
       </div>
+      <div className="w-1/4 h-full bg-[#1e1e1e] p-4 flex flex-col">
+        <div className="flex-grow overflow-y-auto mb-4 space-y-2">
+          {messages.map((msg, index) => (
+            <div
+              key={index}
+              className={`flex ${msg.nickname === myNickname ? "justify-end" : "justify-start"}`}
+            >
+              <div className="flex-col">
+                <div className={`${msg.nickname === myNickname ? "text-right" : "text-left"} text-xs text-white`}>
+                  {msg.nickname.length > 15 ? msg.nickname.substring(0, 15) + '...' : msg.nickname}
+                </div>
+                <div
+                  className={`${msg.nickname === myNickname
+                    ? "bg-indigo-800 text-white text-right rounded-tr-none"
+                    : "bg-[#4b4b4b] text-white font-medium rounded-tl-none"
+                    } min-w-36 max-w-lg rounded-lg p-2`}
+                >
+                  <div>
 
-      {/* Chat Panel */}
-      <div className='w-[30%] bg-[#1e1e1e] p-6 flex flex-col'>
-        <h2 className='text-xl font-bold mb-4 text-gray-300'>Chat</h2>
-        <hr />
-        <div className='flex-1 overflow-y-auto mb-4'>
-          {/* Display messages */}
-          <div className='space-y-2'>
-            {messages.map((msg, index) => (
-              <div key={index} className='bg-[#2b2b2b] p-2 rounded-md'>
-                <p className='text-gray-300'>{msg}</p>
+                    <div className="text-sm">{msg.message}</div>
+                    <div className="text-xs mb-1">
+                      {msg.timeStamp}
+                    </div>
+                  </div>
+                </div>
               </div>
-            ))}
-          </div>
+            </div>
+          ))}
+
         </div>
-        <div className='flex'>
+        <div className="flex items-center">
           <input
+            className="flex-grow px-5 py-3 bg-[#2b2b2b] text-white rounded-lg rounded-r-none p-2 focus:outline-none"
             type="text"
-            value={newMessage}
-            onChange={(e) => setNewMessage(e.target.value)}
-            placeholder="Type a message"
-            className='bg-[#3a3a3a] text-white flex-grow p-2 rounded-l-md border-none outline-none'
+            placeholder="Type your message..."
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            onKeyPress={(e) => e.key === "Enter" && sendMessage()}
+            disabled={isMyTurn ? true : false}
           />
           <button
             onClick={sendMessage}
-            className='bg-[#2b2b2b] p-2 rounded-r-md text-white hover:bg-[#1b1b1b] transition duration-200'
+            className="px-5 py-3 flex rounded-lg rounded-l-none bg-indigo-600 text-white hover:bg-indigo-800 transition duration-200"
           >
             Send
+            <SendIcon className="ml-2 items-center w-5 h-5" />
           </button>
         </div>
       </div>
