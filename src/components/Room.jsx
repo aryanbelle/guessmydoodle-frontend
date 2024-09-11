@@ -87,8 +87,9 @@ function Room() {
 
       });
 
-      socket.on("game-ended", ({ roomId, winner, score, message }) => {
-        enqueueSnackbar(`${winner} won the game with ${score} points`, { variant: 'default', anchorOrigin: { vertical: 'default', horizontal: 'center' }, autoHideDuration: 2000 });
+      socket.on("game-ended", ({ roomId, ranking , message }) => {
+        // enqueueSnackbar(`${winner} won the game with ${score} points`, { variant: 'default', anchorOrigin: { vertical: 'default', horizontal: 'center' }, autoHideDuration: 2000 });
+        console.log(ranking)
       })
 
       socket.on("set-counter", (timer) => {
@@ -326,7 +327,7 @@ function Room() {
               className={`flex ${msg.nickname === myNickname ? "justify-end" : "justify-start"}`}
             >
               <div className="flex-col">
-                <div className={`${msg.nickname === myNickname ? "text-right" : "text-left"} text-xs ${theme==='light'?'text-black':'text-white'}`}>
+                <div className={`${msg.nickname === myNickname ? "text-right" : "text-left"} text-xs ${theme === 'light' ? 'text-black' : 'text-white'}`}>
                   {msg.nickname.length > 15 ? msg.nickname.substring(0, 15) + '...' : msg.nickname}
                 </div>
                 <div
@@ -337,7 +338,7 @@ function Room() {
                 >
                   <div>
                     <div className="text-sm">{msg.message}</div>
-                    <div className="mb-1" style={{fontSize: '10px'}}>
+                    <div className="mb-1" style={{ fontSize: '10px' }}>
                       {msg.timeStamp}
                     </div>
                   </div>
