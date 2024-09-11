@@ -8,6 +8,7 @@ import io from "socket.io-client";
 import { auth } from '../lib/firebaseConfig';
 import { useTheme } from "../ThemeContext";
 import { SnackbarProvider, enqueueSnackbar } from "notistack";
+import Modal from 'react-modal';
 
 const socket = io("http://localhost:5000");
 
@@ -27,6 +28,8 @@ function Room() {
   const isDrawing = useRef(false);
   const [isMyTurn, setIsMyTurn] = useState(false);
   const [counter, setCounter] = useState(0);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [playersScores, setPlayersScores] = useState([]);
   const { theme, changeTheme } = useTheme();
 
   const [usersPhotoUrl, setUsersPhotoUrl] = useState([]);
@@ -87,9 +90,10 @@ function Room() {
 
       });
 
-      socket.on("game-ended", ({ roomId, ranking , message }) => {
-        // enqueueSnackbar(`${winner} won the game with ${score} points`, { variant: 'default', anchorOrigin: { vertical: 'default', horizontal: 'center' }, autoHideDuration: 2000 });
-        console.log(ranking)
+      socket.on("game-ended", ({ roomId, players_score_data, message }) => {
+        enqueueSnackbar("winner score: " + players_score_data, { variant: 'default', anchorOrigin: { vertical: 'default', horizontal: 'center' }, autoHideDuration: 2000 });
+        setPlayersScores(players_score_data);
+        setIsModalOpen(true);
       })
 
       socket.on("set-counter", (timer) => {
@@ -104,7 +108,8 @@ function Room() {
 
       socket.on("start-drawing", ({ word, roomId }) => {
         setIsMyTurn(true);
-        enqueueSnackbar(`You have to draw: ${word}`, { variant: 'success', anchorOrigin: { vertical: 'top', horizontal: 'center' }, autoHideDuration: 2000 });
+        enqueueSnackbar("You have to draw: " + word, { variant: 'default', anchorOrigin: { vertical: 'default', horizontal: 'center' }, autoHideDuration: 2000 });
+
       })
       socket.on("drawing-started", ({ roomId, currentPlayer }) => {
         // alert(`${currentPlayer}'s turn`)
@@ -226,6 +231,9 @@ function Room() {
     setMessage("");
   };
 
+  const closeModal = () => {
+    setIsModalOpen(false);
+  }
 
 
   return (
@@ -348,6 +356,32 @@ function Room() {
           ))}
 
         </div>
+
+        <Modal
+          isOpen={isModalOpen}
+          onRequestClose={closeModal}
+          contentLabel="Game Ended"
+          ariaHideApp={false}
+          className="fixed inset-0 flex items-center justify-center p-4 bg-black bg-opacity-50"
+          overlayClassName="fixed inset-0 bg-black bg-opacity-50"
+        >
+          <div className="bg-white p-6 rounded-lg shadow-lg min-w-xl mx-auto">
+            <h2 className="text-2xl font-bold mb-4">Game Over</h2>
+            <ul className="list-disc list-inside mb-4">
+              {playersScores.map((player, index) => (
+                <li key={index} className="text-lg">
+                  <span className="font-semibold">{player.nickname}:</span> {player.score}
+                </li>
+              ))}
+            </ul>
+            <button
+              onClick={closeModal}
+              className="px-4 py-2 bg-blue-500 text-white rounded hover:bg-blue-600 focus:outline-none focus:ring-2 focus:ring-blue-500"
+            >
+              Close
+            </button>
+          </div>
+        </Modal>
         <div className="flex items-center">
           <input
             className={`flex-grow px-5 py-3 ${theme === 'light' ? 'bg-[#e6e6e6] text-black' : 'bg-[#2b2b2b] text-white'} rounded-lg rounded-r-none p-2 focus:outline-none`}
